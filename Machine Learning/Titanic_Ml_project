@@ -1,0 +1,156 @@
+import pandas as pd 
+train = pd.read_csv('ML-practice-projects\\train.csv')
+test = pd.read_csv('ML-practice-projects\\test.csv')
+# Basic info
+print(train.head())
+print(train.shape)  
+print(train.info())
+print(train.describe())
+
+# Check for missing values
+print(train.isnull().sum())
+
+# Target distribution
+print(train['Survived'].value_counts())
+
+# survival rate 
+
+print(train.groupby('Sex')['Survived'].mean())
+print(train.groupby('Pclass')['Survived'].mean())
+
+# fill missing values 
+train['Age'] = train['Age'].fillna(train['Age'].median())
+test['Age'] = test['Age'].fillna(test['Age'].median())
+test['Fare'] = test['Fare'].fillna(test['Fare'].median())
+# fill embarked with mode beceause mode values are those which are most frequent in the column
+train['Embarked'] = train['Embarked'].fillna(train['Embarked'].mode()[0])
+
+print(test.isnull().sum())
+
+test['Embarked'] = test['Embarked'].fillna(test['Embarked'].mode()[0])
+
+# drop cabin columns 
+train = train.drop('Cabin', axis=1)
+test = test.drop('Cabin', axis=1)   
+
+# encoding sex and embarked columns using one hot encoding
+train['Sex'] = train['Sex'].map({'male': 0 , 'female':1})
+test['Sex'] = test['Sex'].map({'male': 0 , 'female':1})
+
+train['Embarked'] = train['Embarked'].map({'S': 0 , 'C':1, 'Q':2})
+test['Embarked'] = test['Embarked'].map({'S': 0 , 'C':1, 'Q':2})
+
+# FamilySize feature
+train['FamilySize'] = train['SibSp'] + train['Parch'] + 1
+test['FamilySize'] = test['SibSp'] + test['Parch'] + 1
+
+# Name sa title
+
+train['Title'] = train['Name'].str.extract(' ([A-Za-z]+)\.')
+test['Title'] = test['Name'].str.extract(' ([A-Za-z]+)\.')
+
+print(train['Title'].value_counts()) 
+
+# Rare titles 
+rare_titels = ['Dr', 'Rev', 'Col', 'Major', 'Ms', 'Mlle', 'Mme', 'Don', 'Lady', 
+               'Sir', 'Capt', 'Countess', 'Jonkheer', 'Dona']
+train['Title'] = train['Title'].replace(rare_titels, 'Rare')
+test['Title'] = test['Title'].replace(rare_titels, 'Rare')
+
+#  Title ko numbers mein convert karte hain
+title_mapping = {'Mr': 0, 'Miss': 1, 'Mrs': 2, 'Master': 3, 'Rare': 4}
+train['Title'] = train['Title'].map(title_mapping)
+test['Title'] = test['Title'].map(title_mapping)
+# IsAlone feature - akela tha ya family ke sath
+train['IsAlone'] = (train['FamilySize'] == 1).astype(int)
+test['IsAlone'] = (test['FamilySize'] == 1).astype(int)
+
+# Age ko categories (bins) mein todte hain
+train['AgeBin'] = pd.cut(train['Age'], bins=[0, 12, 20, 40, 60, 100], labels=[0, 1, 2, 3, 4])
+test['AgeBin'] = pd.cut(test['Age'], bins=[0, 12, 20, 40, 60, 100], labels=[0, 1, 2, 3, 4])
+train['AgeBin'] = train['AgeBin'].astype(int)
+test['AgeBin'] = test['AgeBin'].astype(int)
+
+# Fare ko categories mein todte hain (quantile based - barabar groups)
+train['FareBin'] = pd.qcut(train['Fare'], 4, labels=[0, 1, 2, 3])
+test['FareBin'] = pd.qcut(test['Fare'], 4, labels=[0, 1, 2, 3])
+train['FareBin'] = train['FareBin'].astype(int)
+test['FareBin'] = test['FareBin'].astype(int)
+
+print(train[['Age', 'AgeBin', 'Fare', 'FareBin', 'IsAlone']].head(10))
+
+train = train.drop(['Name', 'Ticket'], axis=1)
+test_pessenger_id = test['PassengerId'] 
+test = test.drop(['Name', 'Ticket'], axis=1)
+
+print(train.head())
+print(test.isnull().sum())
+
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
+
+x = train.drop(['PassengerId', 'Survived','Age', 'Fare'], axis=1)
+y = train['Survived']
+
+x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=42)
+# Model banate hain
+model = RandomForestClassifier(n_estimators=100, random_state=42)
+model.fit(x_train, y_train)
+# Validation set par predict karte hain
+val_predictions = model.predict(x_test)
+
+# Accuracy check karte hain
+accuracy = accuracy_score(y_test, val_predictions)
+print("Validation Accuracy:", accuracy)
+from sklearn.model_selection import GridSearchCV
+
+# Different settings try karne ke liye
+param_grid = {
+    'n_estimators': [100, 200, 300],
+    'max_depth': [5, 10, 15, None],
+    'min_samples_split': [2, 5, 10],
+    'min_samples_leaf': [1, 2, 4]
+}
+
+grid_search = GridSearchCV(
+    RandomForestClassifier(random_state=42),
+    param_grid,
+    cv=5,               # 5-fold cross validation
+    scoring='accuracy',
+    n_jobs=-1           # sab CPU cores use karega, fast chalega
+)
+
+grid_search.fit(x_train, y_train)
+
+print("Best parameters:", grid_search.best_params_)
+print("Best cross-validation accuracy:", grid_search.best_score_)
+
+# Best model se validation set par test karte hain
+best_model = grid_search.best_estimator_
+val_predictions = best_model.predict(x_test)
+accuracy = accuracy_score(y_test, val_predictions)
+print("Validation Accuracy (tuned model):", accuracy)
+
+# Test set par predict karte hain
+test_features = test.drop(['PassengerId', 'Age', 'Fare'], axis=1)
+test_predictions = best_model.predict(test_features)
+
+from xgboost import XGBClassifier
+
+xgb_model = XGBClassifier(n_estimators=100, max_depth=5, learning_rate=0.05, random_state=42)
+xgb_model.fit(x_train, y_train)
+
+xgb_predictions = xgb_model.predict(x_test)
+xgb_accuracy = accuracy_score(y_test, xgb_predictions)
+print("XGBoost Validation Accuracy:", xgb_accuracy)
+
+# Submission file banate hain (jaisa gender_submission.csv ka format tha)
+submission = pd.DataFrame({
+    'PassengerId': test_pessenger_id,
+    'Survived': test_predictions
+})
+
+submission.to_csv('my_submission.csv', index=False)
+print("Submission file ban gayi!")
+print(submission.head())
